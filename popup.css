@@ -1,0 +1,360 @@
+/* Design tokens. The popup previously hardcoded hex everywhere; these names the
+   colours it was already using, so new components can reference the palette
+   instead of re-inventing it. (No dark theme yet — the popup has never had one.
+   When it gets one, override these under `prefers-color-scheme: dark` and every
+   token-driven component follows.) */
+:root {
+  --text-primary:    #1f2430;
+  --text-secondary:  #6b7280;
+
+  --surface-0:       #fff;      /* cards */
+  --surface-1:       #eef1f6;   /* hover tint (matches button:hover) */
+  --surface-page:    #f7f8fa;
+
+  --border:          #e2e5ec;
+  --border-strong:   #c2c8d4;   /* hollow control outlines */
+  --border-accent:   #57068c;   /* NYU violet — focus rings */
+
+  /* success — the greens the "In Cart" chip and Open status already use */
+  --bg-success:      #e3f5e8;
+  --border-success:  #a8dcbb;
+  --fill-success:    #15a34a;
+  --text-success:    #14602c;
+  --on-success:      #fff;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  width: 380px;
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--text-primary);
+  background: var(--surface-page);
+  padding: 14px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 12px;
+}
+.logo { flex: none; display: block; }
+.brand { min-width: 0; }
+h1 { font-size: 17px; line-height: 1.2; }
+.ver { font: 400 11px ui-monospace, Menlo, Consolas, monospace; color: #9aa1ad; }
+.tagline { color: #6b7280; font-size: 12px; }
+
+section { margin-bottom: 12px; }
+
+button {
+  font: inherit;
+  padding: 6px 12px;
+  border: 1px solid #c9cedb;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { background: #eef1f6; }
+button:disabled { opacity: 0.5; cursor: default; }
+
+button.primary {
+  width: 100%;
+  padding: 9px;
+  font-weight: 600;
+  color: #fff;
+  background: #57068c; /* NYU violet */
+  border-color: #57068c;
+}
+button.primary:hover:not(:disabled) { background: #6d1aa8; }
+
+button.secondary {
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px;
+  font-weight: 600;
+  color: #57068c;
+  background: #fff;
+  border-color: #cbb6dc;
+}
+button.secondary:hover:not(:disabled) { background: #f6f0fb; }
+
+button.ghost {
+  border: none;
+  background: none;
+  color: #6b7280;
+  padding: 2px 6px;
+}
+button.ghost:hover { color: #1f2430; background: none; text-decoration: underline; }
+
+#btnImport { width: 100%; padding: 8px; font-weight: 600; }
+
+details { margin-top: 8px; }
+summary { cursor: pointer; color: #6b7280; font-size: 12px; }
+textarea {
+  width: 100%;
+  margin: 6px 0;
+  padding: 6px;
+  font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace;
+  border: 1px solid #c9cedb;
+  border-radius: 6px;
+  resize: vertical;
+}
+
+.msg {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  background: #e8ebf1;
+}
+.msg.error { background: #fde8e8; color: #9b1c1c; }
+.msg.ok { background: #e3f5e8; color: #14602c; }
+
+.row-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; }
+
+#queueList { list-style: none; }
+
+.cls {
+  background: #fff;
+  border: 1px solid #e2e5ec;
+  border-radius: 8px;
+  padding: 7px 10px;
+  margin-bottom: 6px;
+}
+
+/* Collapsed, a class is just: chevron + course code + status, then the
+   permission box. Everything else lives behind the disclosure. */
+.cls-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  user-select: none;
+}
+.cls-head:focus-visible { outline: 2px solid #57068c; outline-offset: 2px; border-radius: 4px; }
+/* A real chevron, drawn with borders. Note the offset: a 45°-rotated square with
+   right+bottom borders draws a V that occupies the LOWER half of its own box, so
+   centring the square leaves the arrow sitting visibly low. `top` lifts it so the
+   V's optical middle lands on the box centre — and therefore on the course code's
+   midline, since .cls-head centres its children. */
+.chev {
+  flex: none;
+  position: relative;
+  width: 14px;
+  height: 14px;
+  transition: transform .18s ease;
+}
+.chev::before {
+  content: "";
+  position: absolute;
+  top: 1px;          /* lifts the V's optical centre onto the box centre */
+  left: 3.5px;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid #7b8394;
+  border-bottom: 2px solid #7b8394;
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
+.cls-head:hover .chev::before { border-color: #57068c; }
+.cls.open .chev { transform: rotate(180deg); }
+.cls-head .code { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cls-head .chip { flex: none; }
+
+/* The always-visible controls: permission code + waitlist toggle. */
+.cls-quick {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 7px;
+}
+.cls-quick .perm-l {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #4b5563;
+  white-space: nowrap;
+}
+
+.cls-detail { display: none; margin-top: 8px; padding-top: 7px; border-top: 1px solid #eef0f4; }
+.cls.open .cls-detail { display: block; }
+
+/* A failure states its reason right on the card — no expanding required — and
+   is meant to be impossible to miss. */
+.cls.is-failed { border-color: #efb0ab; background: #fffafa; }
+.err {
+  margin-top: 8px;
+  border: 1px solid #f0b7b2;
+  border-left: 4px solid #d92d20;
+  border-radius: 6px;
+  background: #fdecea;
+  padding: 7px 9px;
+}
+.err-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #a4231a;
+  margin-bottom: 3px;
+}
+.err-icon { font-size: 13px; }
+.err-body {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #7f2119;
+  white-space: pre-line;   /* keep the bullet list */
+  word-break: break-word;
+}
+
+.code { font-weight: 600; }
+.title { color: #6b7280; font-size: 12px; }
+
+/* Status label (passive). Shares the 11px scale with the waitlist toggle so the
+   two pills read as one family — the toggle stays a little larger because it's an
+   interactive control, not a label. */
+.chip {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.chip.queued   { background: #e8ebf1; color: #4b5563; }
+.chip.working  { background: #fff3d6; color: #92600a; }
+.chip.in-cart  { background: #e3f5e8; color: #14602c; }
+.chip.failed   { background: #fde8e8; color: #9b1c1c; }
+.chip.stopped  { background: #e8ebf1; color: #6b7280; }
+
+/* One row per component: Lecture, then each recitation/lab. Fixed columns so
+   the class numbers line up down the card. */
+.comps { list-style: none; margin-top: 6px; }
+.comp {
+  display: grid;
+  grid-template-columns: 76px 40px 1fr auto;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 6px;
+  font-size: 12px;
+  border-left: 2px solid #e2e5ec;
+}
+.comp + .comp { margin-top: 2px; }
+.ctype { color: #6b7280; }
+.csec { font-weight: 600; color: #1f2430; }
+.cnbr { font-family: ui-monospace, Menlo, Consolas, monospace; color: #374151; }
+.cstat { font-size: 11px; font-weight: 600; }
+.cstat.open { color: #15a34a; }   /* vivid green */
+.cstat.wl   { color: #c98a00; }   /* yellow / gold — wait list */
+.cstat.shut { color: #9b1c1c; }   /* red — closed */
+
+.warn {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #92600a;
+  background: #fff8e8;
+  border-radius: 4px;
+  padding: 3px 6px;
+}
+
+/* Einstein's `notes` can run to several paragraphs — keep it folded away. */
+.restr { margin-top: 6px; }
+.restr summary { font-size: 11px; }
+.restr p {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #4b5563;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+input.perm {
+  width: 78px;
+  padding: 3px 6px;
+  font: 12px ui-monospace, Menlo, Consolas, monospace;
+  border: 1px solid #c9cedb;
+  border-radius: 4px;
+}
+input.perm:focus { outline: 2px solid #57068c; outline-offset: -1px; }
+/* "Optional" sits pale inside the empty box, so it reads as a hint and not as
+   a value the student is expected to supply. */
+input.perm::placeholder { color: #b6bcc7; font-style: normal; }
+
+/* "Waitlist if full" — a checkbox-pill toggle. Every on/off style hangs off the
+   [aria-pressed="true"] selector, so the JS never touches presentation: it flips
+   the attribute and persists the state, and CSS does the rest. At rest there's no
+   pill at all — the hollow checkbox is the affordance. */
+.wl-toggle {
+  all: unset;
+  cursor: pointer;
+  font-size: 11px;          /* same scale as .chip, so they read as a family */
+  font-weight: 600;
+  line-height: 1.4;
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  transition: background .12s, border-color .12s, color .12s;
+}
+.wl-toggle:hover { background: var(--surface-1); }
+.wl-toggle:focus-visible { box-shadow: 0 0 0 2px var(--border-accent); }
+
+.wl-box {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  border: 1.5px solid var(--border-strong);
+  background: var(--surface-0);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .12s, border-color .12s;
+}
+.wl-check {
+  width: 10px;
+  height: 10px;
+  opacity: 0;
+  transition: opacity .12s;
+}
+
+.wl-toggle[aria-pressed="true"] {
+  background: var(--bg-success);
+  border-color: var(--border-success);
+  color: var(--text-success);
+}
+.wl-toggle[aria-pressed="true"] .wl-box {
+  background: var(--fill-success);
+  border-color: var(--fill-success);
+}
+.wl-toggle[aria-pressed="true"] .wl-check {
+  opacity: 1;
+  color: var(--on-success);
+}
+
+/* Failure messages are multi-line with a bullet list of what the lecture offers,
+   so newlines must survive. */
+.status-msg {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #6b7280;
+  white-space: pre-line;   /* keep the newlines / bullet list */
+  word-break: break-word;
+}
+
+.note {
+  margin-top: 10px;
+  font-size: 11px;
+  color: #9aa1ad;
+  text-align: center;
+}

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img src="icons/icon48.png" alt="" class="logo" width="30" height="30">
+    <div class="brand">
+      <h1>Relativity <span id="ver" class="ver"></span></h1>
+      <p class="tagline">Einstein &rarr; Albert. Fills your cart, never enrolls.</p>
+    </div>
+  </header>
+
+  <section id="source">
+    <button id="btnImport">Import schedule from Einstein</button>
+    <div id="importMsg" class="msg" hidden></div>
+  </section>
+
+  <section id="queueSec" hidden>
+    <div class="row-head">
+      <h2>Queue</h2>
+      <button id="btnClear" class="ghost">Clear</button>
+    </div>
+    <ul id="queueList"></ul>
+  </section>
+
+  <button id="btnFill" class="primary" disabled>Fill Albert's cart</button>
+  <div id="fillMsg" class="msg" hidden></div>
+
+  <button id="btnClearCart" class="secondary">Clear Albert's cart</button>
+  <div id="clearCartMsg" class="msg" hidden></div>
+
+  <p class="note">
+    Stops once classes are in the cart — reviewing and clicking
+    &ldquo;Finish&nbsp;Enrolling&rdquo; is always done by you, by hand.
+  </p>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+# Windows/WSL: NTFS alternate-data-stream turds left on downloaded files.
+*:Zone.Identifier
+
+# Local Claude Code permissions, not project config.
+.claude/settings.local.json
+
+# Deliberately unpublished: a live, verified map of Albert's DOM. Useful to have
+# locally, not something to hand out. Kept out of the repo on purpose — code and
+# CLAUDE.md reference it, and those references dangle for anyone but the author.
+recon-findings.md
+
+# OS noise
+.DS_Store
+Thumbs.db

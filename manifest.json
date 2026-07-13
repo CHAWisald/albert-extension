@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Relativity",
+  "version": "2.2.1",
+  "description": "Moves your planned EinsteinNYU schedule into NYU Albert's enrollment shopping cart. Never enrolls — you always review and finish by hand.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": [
+    "https://sis.nyu.edu/*",
+    "https://sis.portal.nyu.edu/*"
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Relativity — Einstein to Albert",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}
