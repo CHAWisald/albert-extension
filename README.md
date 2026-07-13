@@ -6,7 +6,7 @@ NYU Albert's enrollment shopping cart.
 
 **It fills the cart. It never enrolls you.** Reviewing the cart and clicking
 "Finish Enrolling" is always done by you, by hand. That is a hard architectural
-guarantee, not a default setting — see [Safety](#safety).
+guarantee, not a default setting—see [Safety](#safety).
 
 The name is the joke that was already sitting there: NYU's registrar is
 **Albert**, the planner is **Einstein**. Albert Einstein → *Relativity*.
@@ -21,7 +21,7 @@ recitation again from a grid. Relativity closes that gap.
 ## What it does
 
 1. Reads your planned schedule out of Einstein (no login, no scraping of the
-   rendered page — it reads the planner's own `needCart` state).
+   rendered page, it reads the planner's own `needCart` state).
 2. For each class, drives Albert's real "Add Classes" flow inside your own
    already-logged-in browser session: class number → recitation/lab → permission
    code → waitlist preference → add to cart.
@@ -39,8 +39,8 @@ This automates a university registration system, so the constraints are worth
 being explicit about.
 
 - **It cannot enroll you.** "Proceed to Step 2 of 3", "Enroll", "Validate", and
-  "Finish Enrolling" are refused by two independent guards — one in the
-  extension's isolated world, one in the page's MAIN world — each checking the
+  "Finish Enrolling" are refused by two independent guards—one in the
+  extension's isolated world, one in the page's MAIN world—each checking the
   button's visible label, its element id, *and* the argument in its `submitAction`
   href. To make this extension enroll you, you would have to defeat both.
 - **It never handles credentials.** No passwords, no login automation. It rides
@@ -81,7 +81,7 @@ way:
 **Albert's controls live in a cross-origin subframe.** The top frame is
 `sis.portal.nyu.edu`; the actual UI is an `iframe#lbFrameContent` served from
 `sis.nyu.edu`. Both relax `document.domain` to `nyu.edu`, so the top frame can
-*read* the subframe — but injecting a script into it requires a real host
+*read* the subframe—but injecting a script into it requires a real host
 permission. `activeTab` alone silently skips the frame.
 
 **Isolated-world clicks do not work.** Albert's buttons are
@@ -102,7 +102,7 @@ Two more things that are not obvious:
   not a script.
 - PeopleSoft refreshes partially, over XHR. Every submit is followed by a
   MutationObserver-based settle. Skipping this was the cause of the longest bug
-  in this project's history ("Next is never clicked" — it was, but the DOM was
+  in this project's history ("Next is never clicked". It was, but the DOM was
   read before the page had reacted).
 
 ### Files
@@ -132,7 +132,7 @@ Two more things that are not obvious:
 Unofficial. Not affiliated with, endorsed by, or supported by New York
 University. It automates a UI you already have access to, in your own browser,
 under your own session. Use it on your own registration, and check the cart
-before you enroll — the whole design assumes you are the one who presses the
+before you enroll—the whole design assumes you are the one who presses the
 final button.
 
 ## License
