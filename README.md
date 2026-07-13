@@ -1,3 +1,5 @@
+
+
 # Relativity
 
 A Chrome extension that moves a planned class schedule from
@@ -65,13 +67,7 @@ Not on the Chrome Web Store. Load it unpacked:
 
 ## Use
 
-1. Open Einstein, build your schedule as usual.
-2. Click the extension → **Import schedule from Einstein**. Your classes appear
-   as cards. Set a permission code or toggle "Waitlist if full" per class if you
-   need to.
-3. Open Albert and navigate to the **Add Classes** page.
-4. Click **Fill Albert's cart**.
-5. Review the cart in Albert yourself and enroll yourself.
+[Watch the Demo Video on Youtube](https://youtu.be/wkpPPPTuHAY)
 
 ## How it works
 
