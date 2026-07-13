@@ -36,11 +36,39 @@
 //             class, so the expected outcome is a "not found" message.
 //             Nothing reaches the cart: Enter only opens a class's screens.
 //
+//   "perm:<lecture>:<rec>:<code>"   (a submit action; rec may be empty)
+//             ⚠ THE ONE ACTION THAT CAN REACH THE CART. Everything above stops
+//             before the commit Next; this one drives it, on purpose, because
+//             Albert's response to a BAD PERMISSION CODE cannot be observed any
+//             other way — the error only exists as the reply to that submit.
+//             Walks: Enter <lecture> → pick <rec> (or the first offered, or skip
+//             if the class has no components) → Next → Enrollment Preferences →
+//             type <code> into DERIVED_CLS_DTL_CLASS_PRMSN_NBR → Next → capture
+//             whatever comes back → dismiss → Cancel.
+//             It captures the modal at TWO points, because a bad code can fail in
+//             two different places: (a) the field's own onchange runs PeopleSoft's
+//             numeric doEdits, so a non-numeric code like "sdjksd" may be refused
+//             CLIENT-side the moment it's typed, before any submit; (b) a
+//             well-formed but wrong code is refused SERVER-side at Next.
+//             If the code is somehow ACCEPTED the class lands in the shopping
+//             cart — that is recoverable (Clear Albert's cart) and never enrolls,
+//             and the report says `landedInCart: true` so you know to clear it.
+//             Message text is reported raw AND escaped (\u00a0 etc.) so the exact
+//             string can go into recon-findings.md.
+//
 // ============================ HARD STOP ===================================
 // No action is performed against any element whose visible label OR id matches
 // FORBIDDEN_TEXT / FORBIDDEN_ID. On this page that blocks
 // DERIVED_REGFRM1_LINK_ADD_ENRL ("Proceed to Step 2 of 3"), which is the path
-// toward enrolling. This probe has no code path that reaches the cart.
+// toward enrolling. The hard stop is unchanged and absolute: NOTHING here can
+// enroll, validate, or advance past the shopping cart.
+//
+// It used to also be true that "this probe has no code path that reaches the
+// cart". As of v2.4.0 that is NO LONGER TRUE for the `perm:` action, which
+// drives the commit Next deliberately (see above) and can therefore add a class
+// to the CART — the same thing the Fill button does every day, undone by Clear
+// Albert's cart. Every other action still stops short of it. Don't quietly widen
+// that: if you add another action that commits, say so here.
 // ==========================================================================
 
 (() => {
@@ -88,6 +116,32 @@
     norm([el.textContent, el.value, el.title, el.getAttribute("aria-label")]
       .filter(Boolean).join(" "));
 
+  const waitFor = async (test, ms) => {
+    const deadline = Date.now() + ms;
+    while (Date.now() < deadline) { await sleep(250); if (test()) return true; }
+    return false;
+  };
+
+  // recon-findings.md already had to flag that Albert's duplicate message hides a
+  // U+00A0 in it — a normalized capture would have lost that. So permission-error
+  // text is reported BOTH ways: `norm`ed for reading, and escaped so every
+  // non-ASCII character is visible and can be copied into the findings verbatim.
+  const escapeExact = (s) =>
+    JSON.stringify(String(s == null ? "" : s))
+      .replace(/[\u0080-\uFFFF]/g, (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
+
+  // Every place Albert is known to put a message, read straight off the element
+  // rather than off a container that would drag #msgnum and the OK label in.
+  function messageText(doc) {
+    for (const id of ["alertmsg", "shortmsg", "ptModContent_0"]) {
+      const el = doc.getElementById(id);
+      if (!el || !visible(el)) continue;
+      const raw = el.textContent;
+      if (norm(raw)) return { from: "#" + id, text: norm(raw), exact: escapeExact(raw) };
+    }
+    return null;
+  }
+
   function assertAllowed(el) {
     const l = labelOf(el);
     if (FORBIDDEN_TEXT.test(l)) throw new Error(`HARD STOP: label "${l.slice(0, 60)}"`);
@@ -98,10 +152,24 @@
   // frame's HTMLInputElement, so read the prototype off its own window.
   function setNativeValue(el, value) {
     const win = el.ownerDocument.defaultView;
+    // Pick the prototype off the TAG, not off instanceof. A PeopleSoft id prefix
+    // matches the label and the wrapper as well as the field, so a sloppy selector
+    // hands this a <label> — and the native setter then throws "Illegal
+    // invocation", which names neither the element nor the selector that found it.
+    // Say what actually happened instead. (This is a real bug we hit, not a
+    // hypothetical: v2.4.1's perm: probe died exactly here.)
+    const tag = el.tagName;
     const proto =
-      el instanceof win.HTMLSelectElement ? win.HTMLSelectElement.prototype :
-      el instanceof win.HTMLTextAreaElement ? win.HTMLTextAreaElement.prototype :
-      win.HTMLInputElement.prototype;
+      tag === "SELECT" ? win.HTMLSelectElement.prototype :
+      tag === "TEXTAREA" ? win.HTMLTextAreaElement.prototype :
+      tag === "INPUT" ? win.HTMLInputElement.prototype :
+      null;
+    if (!proto) {
+      throw new Error(
+        `setNativeValue got <${tag.toLowerCase()}${el.id ? "#" + el.id : ""}>, which has no value to set — ` +
+        `the selector that found it is matching a label or wrapper, not the field`
+      );
+    }
     Object.getOwnPropertyDescriptor(proto, "value").set.call(el, value);
     el.dispatchEvent(new win.Event("input", { bubbles: true }));
     el.dispatchEvent(new win.Event("change", { bubbles: true }));
@@ -370,14 +438,16 @@
     const isEnter = action.startsWith("enter:");
     const isPrefs = action.startsWith("prefs:");
     const isWl = action.startsWith("wl:");
-    const isBridge = action.startsWith("bridge:") || isEnter || isPrefs || isWl;
+    const isPerm = action.startsWith("perm:");
+    const isBridge = action.startsWith("bridge:") || isEnter || isPrefs || isWl || isPerm;
     let enterValue = PROBE_NBR;
     let recPick = null;
+    let permCode = null;
 
-    if (isEnter || isPrefs || isWl) {
+    if (isEnter || isPrefs || isWl || isPerm) {
       const parts = action.slice(action.indexOf(":") + 1).split(":").map((s) => s.trim());
       enterValue = parts[0];
-      recPick = (isPrefs || isWl) ? parts[1] : null;
+      recPick = (isPrefs || isWl || isPerm) ? (parts[1] || null) : null;
       if (!/^\d{4,5}$/.test(enterValue)) {
         out.error = `expects a 4–5 digit class number, got "${enterValue}"`;
         return out;
@@ -385,6 +455,20 @@
       if ((isPrefs || isWl) && !/^\d{4,5}$/.test(recPick || "")) {
         out.error = `needs a recitation class number, e.g. prefs:10603:10604 or wl:10612:10613`;
         return out;
+      }
+      if (isPerm) {
+        // The code is NOT validated — feeding it garbage ("sdjksd") is the entire
+        // point. The recitation is optional: blank means "this class has no
+        // components, expect Enrollment Preferences straight after Enter".
+        permCode = parts.slice(2).join(":");
+        if (!permCode) {
+          out.error = 'perm: needs a code to try, e.g. perm:10603:10604:sdjksd (or perm:10603::sdjksd for a class with no recitation)';
+          return out;
+        }
+        if (recPick && !/^\d{4,5}$/.test(recPick)) {
+          out.error = `recitation must be a 4–5 digit class number (or blank), got "${recPick}"`;
+          return out;
+        }
       }
       out.targetId = "BUTTON_SMALL";
       target = doc.getElementById("BUTTON_SMALL");
@@ -515,7 +599,13 @@
 
     // Cancel backs us out cleanly (a submitAction_win0 anchor, so via the bridge).
     // We NEVER drive Next/Proceed here — capture only, no commit.
+    // Idempotent: the early-return paths call it, and so does the finally below,
+    // and a second Cancel from the add screen would report a misleading "no Cancel
+    // button" over the real result.
+    let cancelled = false;
     const cancelOut = async () => {
+      if (cancelled) return out.backedOut;
+      cancelled = true;
       const cancel = doc.querySelector('[id^="DERIVED_CLS_DTL_CANCEL_PB"]');
       if (cancel && /^cancel$/i.test(labelOf(cancel))) {
         try {
@@ -532,67 +622,103 @@
         ...doc.querySelectorAll('[id*="alert" i], [id*="msg" i], [role="alertdialog"], [id^="ptMod"]'),
       ].slice(0, 20).map(describe);
 
+      // Anything that throws below (a bad selector, a screen we didn't expect)
+      // used to escape all the way to main(), so the run left Albert parked on a
+      // half-finished class detail screen AND recorded no report — the two things
+      // that make a failed probe expensive. Catch it, keep the partial capture,
+      // and always Cancel back to the add screen in the finally.
+      try {
+
       // prefs:/wl: go deeper — pick the named recitation (its select
       // self-submits), which reveals the Next button. prefs: captures there.
       // wl: clicks Next ONCE more to reach the Enrollment Preferences screen
       // (where a full class shows the waitlist opt-in) and captures that. Neither
       // clicks the commit Next on the preferences screen — both Cancel out.
-      if (isPrefs || isWl) {
+      if (isPrefs || isWl || isPerm) {
         const relateRows = [...doc.querySelectorAll('[id^="SSR_CLS_TBL_R1_RELATE_CLASS_NBR"]')];
-        let relate = relateRows.find((el) => norm(el.textContent) === recPick);
-        // For a waitlist capture the exact recitation is irrelevant — any valid
-        // one reaches the screen we want — so fall back to the first offered.
-        if (!relate && isWl && relateRows.length) {
-          relate = relateRows[0];
-          out.recitationFallback = `${recPick} not offered; used first offered (${norm(relate.textContent)})`;
+
+        // A class with no components goes straight from Enter to Enrollment
+        // Preferences — there is no recitation screen to act on. Only perm: is
+        // allowed to skip it (prefs:/wl: are *about* the recitation screen).
+        const skipRecitation = isPerm && !relateRows.length;
+        if (skipRecitation) {
+          out.recitationSkipped = "no recitation rows on this screen — the class has no components, so Enter went straight to the class detail";
         }
-        if (!relate) {
-          out.prefsError = `recitation ${recPick} is not offered on the screen ` +
-            `(offered: ${relateRows.map((r) => norm(r.textContent)).join(", ") || "none"})`;
-          out.backedOut = await cancelOut();
-          return out;
+
+        if (!skipRecitation) {
+          let relate = recPick ? relateRows.find((el) => norm(el.textContent) === recPick) : null;
+          // For a waitlist or permission capture the exact recitation is
+          // irrelevant — any valid one reaches the screen we want — so fall back
+          // to the first offered rather than failing the capture.
+          if (!relate && (isWl || isPerm) && relateRows.length) {
+            relate = relateRows[0];
+            out.recitationFallback = recPick
+              ? `${recPick} not offered; used first offered (${norm(relate.textContent)})`
+              : `no recitation named; used first offered (${norm(relate.textContent)})`;
+          }
+          if (!relate) {
+            out.prefsError = `recitation ${recPick} is not offered on the screen ` +
+              `(offered: ${relateRows.map((r) => norm(r.textContent)).join(", ") || "none"})`;
+            out.backedOut = await cancelOut();
+            return out;
+          }
+          const idx = (relate.id.match(/\$(\d+)$/) || [])[1];
+          const sel = doc.getElementById(`NYU_DERIVED_SR_ROW_STATUS$${idx}`);
+          if (!sel) {
+            out.prefsError = `no NYU_DERIVED_SR_ROW_STATUS$${idx} select for recitation ${recPick}`;
+            out.backedOut = await cancelOut();
+            return out;
+          }
+          setNativeValue(sel, "Y");
+          try {
+            await bridgeCall("submitAction_win0", ["document.win0", sel.id]);
+            out.recitationPicked = `${norm(relate.textContent)} (row $${idx})`;
+          } catch (e) {
+            out.prefsError = "could not submit recitation: " + e.message;
+            out.backedOut = await cancelOut();
+            return out;
+          }
+          // Wait for the Next button to appear after picking.
+          await waitFor(() => doc.querySelector('a[id^="DERIVED_CLS_DTL_NEXT_PB"]'), 8000);
         }
-        const idx = (relate.id.match(/\$(\d+)$/) || [])[1];
-        const sel = doc.getElementById(`NYU_DERIVED_SR_ROW_STATUS$${idx}`);
-        if (!sel) {
-          out.prefsError = `no NYU_DERIVED_SR_ROW_STATUS$${idx} select for recitation ${recPick}`;
-          out.backedOut = await cancelOut();
-          return out;
-        }
-        setNativeValue(sel, "Y");
-        try {
-          await bridgeCall("submitAction_win0", ["document.win0", sel.id]);
-          out.recitationPicked = `${recPick} (row $${idx})`;
-        } catch (e) {
-          out.prefsError = "could not submit recitation: " + e.message;
-          out.backedOut = await cancelOut();
-          return out;
-        }
-        // Wait for the Next button to appear after picking.
-        const waitFor = (test, ms) => new Promise(async (res) => {
-          const d = Date.now() + ms;
-          while (Date.now() < d) { await sleep(250); if (test()) return res(true); }
-          res(false);
-        });
-        await waitFor(() => doc.querySelector('a[id^="DERIVED_CLS_DTL_NEXT_PB"]'), 8000);
         out.prefsScreen = captureScreen(doc);
 
-        // wl: one more Next → the Enrollment Preferences / waitlist screen.
-        if (isWl) {
+        // Is the permission field on screen? That field only exists on Enrollment
+        // Preferences — and on THAT screen, Next is the COMMIT. So this doubles as
+        // "are we already past the recitation screen", and as the guard that stops
+        // us clicking a commit Next before the code we came here to test is typed.
+        //
+        // `input[...]`, NOT `[...]`: PeopleSoft gives the label, the wrapper and
+        // the field ids sharing one prefix (DERIVED_..._NBR, ..._NBR_LBL, ...$span),
+        // and the label comes FIRST in document order. A tag-less selector returns
+        // the label — which is how v2.4.1 crashed with "Illegal invocation" trying
+        // to set .value on it. Always name the tag on a PeopleSoft id prefix.
+        const permField = () =>
+          [...doc.querySelectorAll('input[id^="DERIVED_CLS_DTL_CLASS_PRMSN_NBR"]')].find(visible) || null;
+        const atPrefs = () => !!permField();
+
+        const clickNext = async (where) => {
           const nextA = [...doc.querySelectorAll('a[id^="DERIVED_CLS_DTL_NEXT_PB"]')]
             .find((a) => /^next$/i.test(labelOf(a)));
-          if (!nextA) {
-            out.wlError = "no Next button appeared after picking the recitation";
-          } else {
-            try {
-              await bridgeCall("submitAction_win0", ["document.win0", nextA.id]);
-              out.nextClicked = nextA.id;
-            } catch (e) {
-              out.wlError = "could not click Next: " + e.message;
-            }
-            // Wait for the next screen (waitlist prefs, or a result modal).
+          if (!nextA) return { error: `no Next button on the ${where} screen` };
+          try { assertAllowed(nextA); } catch (e) { return { error: e.message }; }   // belt: never a forbidden control
+          try {
+            await bridgeCall("submitAction_win0", ["document.win0", nextA.id]);
+            return { id: nextA.id };
+          } catch (e) { return { error: "could not click Next: " + e.message }; }
+        };
+
+        // wl:/perm: one more Next → the Enrollment Preferences screen. Skipped if
+        // we are already standing on it (a class with no components after Enter).
+        if ((isWl || isPerm) && !atPrefs()) {
+          const n = await clickNext("recitation");
+          if (n.error) { out[isWl ? "wlError" : "permError"] = n.error; }
+          else {
+            out.nextClicked = n.id;
+            // Wait for the next screen (preferences, or a result modal).
             await waitFor(() =>
               doc.getElementById("ptModContent_0") ||
+              atPrefs() ||
               doc.querySelector('input[type=checkbox]') ||
               norm((doc.getElementById("DERIVED_REGFRM1_TITLE1") || {}).textContent || "") !== out.prefsScreen.screenTitle,
               10000);
@@ -600,9 +726,75 @@
             out.waitlistScreen.modalText = norm((doc.getElementById("ptModContent_0") || {}).textContent || "").slice(0, 200);
           }
         }
+
+        // ---- perm: type the code and drive the commit Next -------------------
+        //
+        // This is the only way to see Albert reject a permission code: the error
+        // exists only as the server's reply to this submit. Captured at two points
+        // because a bad code can fail in two different places — see the header.
+        if (isPerm && !out.permError) {
+          const perm = permField();
+          if (!perm) {
+            out.permError = "no permission field on this screen — this class may not offer one. " +
+              "Screen captured anyway (see waitlistScreen/prefsScreen).";
+            out.backedOut = await cancelOut();
+            return out;
+          }
+
+          out.permField = {
+            id: perm.id,
+            maxLength: perm.maxLength,
+            valueBefore: perm.value,          // should be "" on a fresh class
+            onchange: perm.getAttribute("onchange"),   // the numeric doEdits regex lives here
+          };
+          out.messageBeforeTyping = messageText(doc);
+
+          // (a) CLIENT-side: the field's onchange runs PeopleSoft's doEdits numeric
+          //     check. A non-numeric code may be refused right here, with no submit.
+          out.codeTried = permCode;
+          setNativeValue(perm, permCode);
+          await sleep(600);
+          out.afterTypingCode = {
+            valueStuck: perm.value === permCode,
+            valueNow: perm.value,
+            message: messageText(doc),
+            note: "if `message` is set here, PeopleSoft rejected the code CLIENT-side (doEdits), before any submit",
+          };
+
+          // (b) SERVER-side: drive Next. If the code is accepted the class lands in
+          //     the CART (recoverable — Clear Albert's cart; it never enrolls).
+          const n = await clickNext("Enrollment Preferences");
+          if (n.error) {
+            out.permError = n.error;
+          } else {
+            out.commitNextClicked = n.id;
+            await waitFor(() => messageText(doc), 12000);
+            const msg = messageText(doc);
+            out.afterNext = {
+              message: msg,
+              screen: captureScreen(doc),
+              // THE ANSWER. Copy `message.exact` into recon-findings.md verbatim.
+              verdict: !msg ? "no message appeared — capture the screen and look at it by hand"
+                : /has been added to your Shopping Cart/i.test(msg.text)
+                  ? "ACCEPTED — Albert took the code and CARTED the class. Run Clear Albert's cart."
+                  : "REJECTED — this is Albert's wording for a bad permission code.",
+            };
+            out.landedInCart = !!msg && /has been added to your Shopping Cart/i.test(msg.text);
+
+            // Dismiss the modal (#ICOK's action is in onclick, so a synthetic click).
+            const ok = doc.querySelector('[id="#ICOK"]');
+            if (ok) { try { ok.click(); } catch { /* ignore */ } await sleep(800); }
+            out.modalDismissed = !messageText(doc);
+          }
+        }
       }
 
-      if (isEnter || isPrefs || isWl) out.backedOut = await cancelOut();
+      } catch (e) {
+        out.crashed = e.message;
+        out.crashStack = (e.stack || "").split("\n").slice(1, 4).map((l) => l.trim());
+      } finally {
+        if (isEnter || isPrefs || isWl || isPerm) out.backedOut = await cancelOut();
+      }
     }
     return out;
   }
@@ -628,9 +820,9 @@
     const action = rawAction.trim();
 
     const ownsInput = !!document.getElementById(CLASS_NBR_ID);
-    // bridge:, enter:, and prefs: all use the same-window bridge handshake, so
-    // they must run in the control frame in-frame.
-    const bridgeSubmit = mode === "submit" && /^(bridge|enter|prefs|wl):/.test(action);
+    // bridge:, enter:, prefs:, wl: and perm: all use the same-window bridge
+    // handshake, so they must run in the control frame in-frame.
+    const bridgeSubmit = mode === "submit" && /^(bridge|enter|prefs|wl|perm):/.test(action);
 
     // ---- the top frame: ALWAYS records a baseline map ------------------------
     // This runs every time, even when no frame has the input, so a run is never

@@ -96,11 +96,16 @@ the still-present add screen and bailed before the recitation screen rendered.
 - `bridge.js` — the MAIN-world escape hatch. Hard allowlist: `submitAction_win0`
   only; refuses any enroll/validate/proceed argument.
 - `albert.js` — the automation. Fill mode (add classes) and clearcart mode.
-- `probe.js` — the recon tool. **Its UI was removed in v2.0** (no longer wired to
-  the popup), but the file is kept: it is the ONLY way to re-learn Albert's DOM
-  if NYU changes the page, and everything it found is recorded in
-  `recon-findings.md`. To use it again, re-add a dev section that injects it with
-  a `stq_probe_mode` of read / cart / screen / submit.
+- `probe.js` — the recon tool. **The file stays; its UI does not.** Removed in
+  v2.0, re-added in v2.4.0 to capture the permission-code behaviour, removed
+  again in **v2.6.0** now that that's done. This is the settled pattern: wire it
+  up when there's DOM to learn, unwire it when there isn't — but never delete the
+  file, because it is the ONLY way to re-learn Albert's DOM if NYU changes the
+  page, and everything it has found is in `recon-findings.md`.
+  To use it again, re-add a dev section that injects `bridge.js` (world MAIN)
+  then `probe.js`, with `stq_probe_mode` = read / cart / screen / submit and
+  `stq_probe_action` for the submit actions. Reports land in `stq_probe`.
+  Git history has the whole popup wiring — `git log -- popup.html` around v2.4.0.
 - The old `test-albert.html` / `test-einstein.html` mocks are **deleted**. They
   were superseded and then removed: the real flow needs the page's own
   `submitAction_win0` plus the cross-origin bridge, which a mock cannot
@@ -147,6 +152,13 @@ controls driving `submitAction_win0`.
      (""/N/**Y**). A **select, not a checkbox**.
    - `input#DERIVED_CLS_DTL_CLASS_PRMSN_NBR$N` — permission code, maxlength 6.
      **Present but usually OPTIONAL** — never abort just because it exists.
+     ⚠ **Albert does NOT clear this field between classes.** The value stays in
+     PeopleSoft's page buffer, so a code entered for class 1 — above all one that
+     was just REJECTED — is still sitting in the box when class 2 reaches this
+     screen, and would be submitted for a class it has nothing to do with.
+     `albert.js` therefore **always writes** the field on the prefs screen (the
+     student's code, or `""` to wipe it) and also calls `clearPermissionFields()`
+     on the way out of a failed class. Never "fill only if we have a code".
 4. **Next** = `a#DERIVED_CLS_DTL_NEXT_PB` → commits to the cart.
    Cancel = `a#DERIVED_CLS_DTL_CANCEL_PB`.
 5. **Result modal** — text in `div#ptModContent_0` / `#alertmsg`; dismiss via
@@ -200,7 +212,8 @@ Select-then-act, NOT per-row delete:
 
 ## The probe (`probe.js`) — how to learn Albert's DOM
 
-Run from the popup's Developer section. Never guess DOM; capture it.
+**Not wired to the popup right now** (see "The files"). Re-add a dev section to
+use it. Never guess DOM; capture it.
 
 - **Read-only** — dumps frames, the add screen, every clickable, forbidden hits.
 - **Capture current screen** — read-only dump of whatever class-detail screen you
@@ -213,14 +226,29 @@ Run from the popup's Developer section. Never guess DOM; capture it.
   - `prefs:<lecture>:<rec>` — also pick the recitation, capture, Cancel.
   - `wl:<lecture>:<rec>` — one Next further (waitlist screen), Cancel.
   - `click:<id>` / `key:Enter` — proven inert (CSP); kept as evidence.
+  - ⚠ `perm:<lecture>:<rec>:<code>` (v2.4.0) — types a **bad permission code** and
+    drives the commit Next, to capture Albert's rejection. **The only probe action
+    that can reach the cart**: every other one stops short, this one must not,
+    because the error exists ONLY as the server's reply to that submit. If the
+    code is accepted the class is carted (`landedInCart: true` in the report) —
+    recoverable with Clear Cart, and it still cannot enroll. `rec` may be blank
+    for a class with no components (`perm:10603::sdjksd`).
+    It captures at **two** points, because a bad code can fail in two places:
+    `afterTypingCode` (the field's `onchange` runs PeopleSoft's numeric
+    `doEdits`, so a non-numeric code may be refused client-side with no submit at
+    all) and `afterNext` (a well-formed but wrong code, refused by the server).
 - Reports land in `chrome.storage` (`stq_probe`) and render in the popup, so
   closing it mid-run loses nothing. URLs are redacted (EMPLID stripped).
+- Message text is reported **normalized and escaped** (` ` visible). Albert's
+  duplicate message hides a U+00A0 that a normalized capture would have silently
+  eaten — don't repeat that; copy the escaped form into `recon-findings.md`.
 
 ## Storage keys
 
 `stq_queue` (classes), `stq_status` (per-class {state, message, log}),
 `stq_run` (run-level status), `stq_run_mode` ("fill" | "clearcart"),
 `stq_import` (import summary), `stq_probe` (probe report),
+`stq_probe_mode` / `stq_probe_action` (what the probe should do),
 `stq_supabase_key`, `stq_cart_debug`.
 
 ## Working style
@@ -236,6 +264,23 @@ Run from the popup's Developer section. Never guess DOM; capture it.
 
 ## Open / unverified
 
+- **The permission code: what Albert really does (captured 2026-07-13, see
+  `recon-findings.md` §1d).** Both assumptions we started with were wrong:
+  - A **non-numeric** code is refused at Next with a generic *number field format
+    error* that **never says "permission"** — so a matcher keyed on that word
+    misses the only error Albert actually produces. `PERM_FORMAT` matches the
+    format wording instead, and only blames the code when we typed one.
+  - A **well-formed but wrong** code (`999999`) is **silently accepted and the
+    class is carted** — Albert doesn't validate the number on a class that
+    doesn't require permission. There is no error to detect there, so we don't
+    pretend there is. This is also why the field MUST be overwritten every time:
+    a stale code rides along silently instead of failing loudly.
+  - The popup now strips non-digits from the permission box, so the format error
+    should be unreachable in normal use — it stays detected as a backstop.
+  - **Still open:** what a class that genuinely *requires* permission says to a
+    wrong code. Never exercised (CSCI-UA 102 doesn't require one). `PERM_REJECTED`
+    / `PERM_REQUIRED` are broad guesses for that case and are labelled as such.
+    Capture it with the probe's `perm:` action on a permission-required class.
 - `#ICOK` modal dismissal is best-effort (synthetic click). The class still lands
   in the cart if it fails; only the next class's start is affected.
 - Einstein `meet_day` 0-index convention (0 = Monday assumed, see above).

@@ -351,10 +351,3 @@ input.perm::placeholder { color: #b6bcc7; font-style: normal; }
   white-space: pre-line;   /* keep the newlines / bullet list */
   word-break: break-word;
 }
-
-.note {
-  margin-top: 10px;
-  font-size: 11px;
-  color: #9aa1ad;
-  text-align: center;
-}

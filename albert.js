@@ -40,6 +40,30 @@
   const FORBIDDEN_TEXT = /finish\s*enrolling|proceed\s+to\s+step|enroll|validate/i;
   const FORBIDDEN_ID = /LINK_ADD_ENRL|SSR_PB_SUBMIT|ENROLL|VALIDATE|STEP[23]/i;
 
+  // How Albert actually answers a bad permission code — CAPTURED LIVE 2026-07-13
+  // with the probe's perm: action (CSCI-UA 102, 8927/8928); see recon-findings.md.
+  // Two results, and neither was what we assumed:
+  //
+  //  1. A NON-NUMERIC code ("sdjksd") is refused at Next with a generic PeopleSoft
+  //     field error that NEVER SAYS "permission":
+  //       "Number field format error. This field accepts unsigned number. Format:
+  //        Up to 6 digit(s) before the decimal… Please re-enter the value…"
+  //     A word-based matcher looking for "permission" misses this entirely — which
+  //     is exactly what the first cut of this code did. Match the format error.
+  //
+  //  2. A WELL-FORMED but wrong code ("999999") is ACCEPTED and the class is
+  //     CARTED. Albert does not validate the number on a class that does not
+  //     require permission — it just ignores it. There is no error to detect, so
+  //     don't pretend there is one.
+  //
+  // Still unknown: what a class that genuinely REQUIRES permission says to a wrong
+  // code. PERM_REJECTED/PERM_REQUIRED below are the still-unverified guesses for
+  // that case, kept deliberately broad; the format error is the verified one.
+  const PERM_FORMAT = /number field format error|accepts unsigned number|re-?enter the value for the input field/i;
+  const PERM_WORD = /permission|prmsn/i;
+  const PERM_REJECTED = /invalid|incorrect|not\s+valid|does\s+not\s+match|expired|already\s+(?:been\s+)?used|no\s+longer|not\s+found|wrong/i;
+  const PERM_REQUIRED = /requir|must\s+(?:be\s+)?enter|is\s+needed|need\s+a/i;
+
   const CONFIG = { stepTimeoutMs: 15000, settleMs: 400, politeMs: 350, maxStepsPerClass: 14, interClassMs: 900 };
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -99,6 +123,21 @@
     el.dispatchEvent(new win.Event("change", { bubbles: true }));
   }
 
+  // Albert does NOT clear the permission-number field between classes — the value
+  // lives in PeopleSoft's page buffer, so a code that was just rejected is still
+  // sitting in the box when the NEXT class reaches Enrollment Preferences, and
+  // would be submitted again for a class it has nothing to do with. Wipe every
+  // permission field that is currently on screen. Returns how many were cleared.
+  async function clearPermissionFields() {
+    const dirty = [...document.querySelectorAll(`input[id^="${PERM_PREFIX}"]`)]
+      .filter((f) => visible(f) && f.value !== "");
+    for (const f of dirty) {
+      setNativeValue(f, "");
+      await sleep(CONFIG.politeMs);
+    }
+    return dirty.length;
+  }
+
   // ---- status + step log (so the first real run is observable) ---------------
 
   let stepLog = [];
@@ -133,11 +172,30 @@
     return "";
   }
 
+  // Is this error modal about the permission code?
+  //   "format"   — the code isn't a number Albert will take (VERIFIED wording).
+  //                Only claimed when we actually put a code in the box: the format
+  //                error is generic PeopleSoft and could in principle come from
+  //                another numeric field, so don't blame the permission code
+  //                unless the permission code is the thing we typed.
+  //   "rejected" — the class required a code and refused ours (UNVERIFIED).
+  //   "required" — the class needs one and none was given (UNVERIFIED).
+  //   null       — not about the code. A message like "you do not have permission
+  //                to enroll" says nothing about the CODE, so it falls through.
+  function permErrorKind(msg, triedCode) {
+    if (triedCode && PERM_FORMAT.test(msg)) return "format";
+    if (!PERM_WORD.test(msg)) return null;
+    if (PERM_REJECTED.test(msg)) return "rejected";
+    if (PERM_REQUIRED.test(msg)) return "required";
+    return null;
+  }
+
   function detectScreen() {
     const modal = resultModal();
     if (modal) {
       if (/has been added to your Shopping Cart/i.test(modal)) return { kind: "success", text: modal };
       if (/already in your Shopping Cart/i.test(modal)) return { kind: "duplicate", text: modal };
+      // Classified in addOne(), which knows whether we actually typed a code.
       return { kind: "error", text: modal };
     }
     const recSelects = [...document.querySelectorAll(`select[id^="${REC_SELECT_PREFIX}"]`)].filter(visible);
@@ -426,7 +484,8 @@
     await bridgeSubmit(enter, "Enter");
     await settleAfterAction(); // don't read the screen until the refresh lands
 
-    let picked = false, permFilled = false, wlHandled = false;
+    let picked = false, permHandled = false, wlHandled = false;
+    let permTried = null;   // the code we actually put in the box, for the error message
     const notes = [];
     for (let step = 0; step < CONFIG.maxStepsPerClass; step++) {
       // While a recitation still needs picking, don't accept the bare recitation
@@ -446,7 +505,36 @@
       }
       if (s.kind === "error") {
         await dismissModal();
-        throw new Error(s.text.slice(0, 160));
+        const said = s.text.slice(0, 160);
+        // Albert's own sentence is kept underneath every headline. The format case
+        // is verified; the other two are not, so if they ever match the wrong
+        // thing, the student still sees what Albert actually said.
+        const kind = permErrorKind(said, permTried);
+        if (kind === "format") {
+          throw new Error([
+            "Error: Incorrect Permission Code",
+            `Albert only accepts a permission code of up to 6 digits, and "${permTried}" isn't a number. ` +
+            "Fix it on this class's card and run Fill again.",
+            "", `Albert said: ${said}`,
+          ].join("\n"));
+        }
+        if (kind === "rejected") {
+          throw new Error([
+            "Error: Incorrect Permission Code",
+            `Albert rejected the code you entered (${permTried}). Check it with the department and try again.`,
+            "", `Albert said: ${said}`,
+          ].join("\n"));
+        }
+        if (kind === "required") {
+          throw new Error([
+            "Error: Permission Code Required",
+            permTried
+              ? `This class needs a permission code, and Albert did not accept ${permTried}.`
+              : "This class needs a permission code from the department. Enter one on the card and run Fill again.",
+            "", `Albert said: ${said}`,
+          ].join("\n"));
+        }
+        throw new Error(said);
       }
 
       if (s.kind === "recitation" && !picked) {
@@ -489,11 +577,24 @@
         // A permission field is often PRESENT but OPTIONAL. Fill it only if the
         // student gave one; never abort just because the field exists. If it's
         // truly required, clicking Next returns an error modal, reported below.
-        if (s.perm && item.permissionNbr && !permFilled) {
-          logStep(`fill permission ${item.permissionNbr}`);
-          setNativeValue(s.perm, String(item.permissionNbr));
-          permFilled = true;
-          await sleep(CONFIG.politeMs);
+        //
+        // ALWAYS write the field, even when this class has no code: Albert keeps
+        // whatever was typed for the previous class (it does not clear the box
+        // between classes), so a code left over from an earlier class — above all
+        // one that was just REJECTED — would otherwise be submitted for this one
+        // and fail it too. Writing "" is what clears it.
+        if (s.perm && !permHandled) {
+          permHandled = true;
+          const want = item.permissionNbr ? String(item.permissionNbr) : "";
+          const stale = s.perm.value;
+          if (stale !== want) {
+            logStep(want
+              ? `fill permission ${want}${stale ? ` (over leftover "${stale}")` : ""}`
+              : `clear leftover permission "${stale}" (this class has no code)`);
+            setNativeValue(s.perm, want);
+            await sleep(CONFIG.politeMs);
+          }
+          permTried = want || null;
         }
         logStep(`click Next (${s.nextBtn.id}${s.perm ? ", perm field present" : ""})`);
         await sleep(CONFIG.politeMs);
@@ -658,6 +759,11 @@
         await setStatus(i, "failed", e.message);
         failed++;
         await dismissModal().catch(() => {});
+        // Wipe the permission box BEFORE cancelling out — Albert does not clear it
+        // itself, so the code this class just failed on would still be in there for
+        // the next one. (The prefs screen re-writes it anyway, but only if the next
+        // class gets that far; clearing here means a bad code never travels.)
+        await clearPermissionFields().catch(() => {});
         await cancelIfMidFlow();
         try { await waitScreen((s) => s.kind !== "add", 6000); } catch { /* keep going regardless */ }
       }

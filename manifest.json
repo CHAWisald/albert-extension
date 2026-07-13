@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Relativity",
-  "version": "2.2.1",
+  "version": "2.6.0",
   "description": "Moves your planned EinsteinNYU schedule into NYU Albert's enrollment shopping cart. Never enrolls — you always review and finish by hand.",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": [

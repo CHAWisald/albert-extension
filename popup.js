@@ -27,8 +27,12 @@ const EINSTEIN_URL = /einsteinnyu\.com/i;
 const ALBERT_URL = /nyu\.edu/i;
 
 // Everything a run leaves behind. Import wipes all of it (it's the start button).
+// The stq_probe_* keys outlive the Developer section that wrote them (removed in
+// v2.6.0): anyone who ran the probe in v2.4/v2.5 still has a report sitting in
+// storage, and this is what clears it. probe.js itself is still in the extension.
 const RUN_KEYS = [
   "stq_queue", "stq_status", "stq_import", "stq_run", "stq_run_mode", "stq_cart_debug",
+  "stq_probe", "stq_probe_mode", "stq_probe_action",
 ];
 
 async function getState() {
@@ -271,6 +275,22 @@ els.import.addEventListener("click", async () => {
 
 // --- Per-class options ----------------------------------------------------
 
+// Albert's permission field is a NUMBER field: up to 6 digits, no sign, no
+// decimals (its own doEdits regex, captured live: /^ *[0-9\,]*(\.[0-9\,]*)? *$/).
+// Anything else is refused at the very last step with a format error — after the
+// class has been opened and its recitation picked. That is the only thing Albert
+// actually rejects, so keep non-digits out of the box and the error can't happen.
+els.queueList.addEventListener("input", (ev) => {
+  const t = ev.target;
+  if (!t.classList || !t.classList.contains("perm")) return;
+  const digits = t.value.replace(/\D/g, "").slice(0, 6);
+  if (digits !== t.value) {
+    const atEnd = t.selectionStart === t.value.length;
+    t.value = digits;
+    if (atEnd) t.setSelectionRange(digits.length, digits.length);
+  }
+});
+
 // Permission code edits (an <input>, fires change).
 els.queueList.addEventListener("change", async (ev) => {
   const t = ev.target;
@@ -279,7 +299,7 @@ els.queueList.addEventListener("change", async (ev) => {
   if (Number.isNaN(i)) return;
   const { queue } = await getState();
   if (!queue[i]) return;
-  queue[i].permissionNbr = t.value.trim();
+  queue[i].permissionNbr = t.value.replace(/\D/g, "").slice(0, 6);
   await chrome.storage.local.set({ stq_queue: queue });
 });
 
